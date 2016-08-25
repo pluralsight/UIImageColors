@@ -9,39 +9,39 @@
 import Foundation
 public extension UIImage {
     
-    public func resize(newSize: CGSize) -> UIImage {
+    public func resize(_ newSize: CGSize) -> UIImage {
         UIGraphicsBeginImageContextWithOptions(newSize, false, 0)
-        self.drawInRect(CGRectMake(0, 0, newSize.width, newSize.height))
+        draw(in: CGRect(x: 0, y: 0, width: newSize.width, height: newSize.height))
         let result = UIGraphicsGetImageFromCurrentImageContext()
         UIGraphicsEndImageContext()
-        return result
+        return result!
     }
     
     public func getColors() -> UIImageColors {
-        let ratio = self.size.width/self.size.height
+        let ratio = size.width / size.height
         let r_width: CGFloat = 250
-        return self.getColors(CGSizeMake(r_width, r_width/ratio))
+        return getColors(CGSize(width: r_width, height: r_width/ratio))
     }
     
-    public func getColors(scaleDownSize: CGSize) -> UIImageColors {
+    public func getColors(_ scaleDownSize: CGSize) -> UIImageColors {
         var result = UIImageColors()
         
-        let cgImage = self.resize(scaleDownSize).CGImage
-        let width = CGImageGetWidth(cgImage)
-        let height = CGImageGetHeight(cgImage)
+        let cgImage = self.resize(scaleDownSize).cgImage!
+        let width = cgImage.width
+        let height = cgImage.height
         
         let bytesPerPixel: Int = 4
         let bytesPerRow: Int = width * bytesPerPixel
         let bitsPerComponent: Int = 8
         let randomColorsThreshold = Int(CGFloat(height)*0.01)
-        let sortedColorComparator: NSComparator = { (main, other) -> NSComparisonResult in
+        let sortedColorComparator: Comparator = { (main, other) -> ComparisonResult in
             let m = main as! PCCountedColor, o = other as! PCCountedColor
             if m.count < o.count {
-                return NSComparisonResult.OrderedDescending
+                return .orderedDescending
             } else if m.count == o.count {
-                return NSComparisonResult.OrderedSame
+                return .orderedSame
             } else {
-                return NSComparisonResult.OrderedAscending
+                return .orderedAscending
             }
         }
         let blackColor = UIColor(red: 0, green: 0, blue: 0, alpha: 1)
@@ -49,10 +49,11 @@ public extension UIImage {
         
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let raw = malloc(bytesPerRow * height)
-        let bitmapInfo = CGImageAlphaInfo.PremultipliedFirst.rawValue
-        let ctx = CGBitmapContextCreate(raw, width, height, bitsPerComponent, bytesPerRow, colorSpace, bitmapInfo)
-        CGContextDrawImage(ctx, CGRectMake(0, 0, CGFloat(width), CGFloat(height)), cgImage)
-        let data = UnsafePointer<UInt8>(CGBitmapContextGetData(ctx))
+        let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue
+        let ctx = CGContext(data: raw, width: width, height: height, bitsPerComponent: bitsPerComponent, bytesPerRow: bytesPerRow, space: colorSpace, bitmapInfo: bitmapInfo)!
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
+        let bytes = ctx.data!.assumingMemoryBound(to: UInt8.self)
+        let data = UnsafePointer<UInt8>(bytes)
         
         let leftEdgeColors = NSCountedSet(capacity: height)
         let imageColors = NSCountedSet(capacity: width * height)
@@ -69,10 +70,10 @@ public extension UIImage {
                 
                 // A lot of albums have white or black edges from crops, so ignore the first few pixels
                 if 5 <= x && x <= 10 {
-                    leftEdgeColors.addObject(color)
+                    leftEdgeColors.add(color)
                 }
                 
-                imageColors.addObject(color)
+                imageColors.add(color)
             }
         }
         
@@ -80,23 +81,23 @@ public extension UIImage {
         var enumerator = leftEdgeColors.objectEnumerator()
         var sortedColors = NSMutableArray(capacity: leftEdgeColors.count)
         while let kolor = enumerator.nextObject() as? UIColor {
-            let colorCount = leftEdgeColors.countForObject(kolor)
+            let colorCount = leftEdgeColors.count(for: kolor)
             if randomColorsThreshold < colorCount  {
-                sortedColors.addObject(PCCountedColor(color: kolor, count: colorCount))
+                sortedColors.add(PCCountedColor(color: kolor, count: colorCount))
             }
         }
-        sortedColors.sortUsingComparator(sortedColorComparator)
+        sortedColors.sort(comparator: sortedColorComparator)
         
         var proposedEdgeColor: PCCountedColor
         if 0 < sortedColors.count {
-            proposedEdgeColor = sortedColors.objectAtIndex(0) as! PCCountedColor
+            proposedEdgeColor = sortedColors.object(at: 0) as! PCCountedColor
         } else {
             proposedEdgeColor = PCCountedColor(color: blackColor, count: 1)
         }
         
         if proposedEdgeColor.color.isBlackOrWhite && 0 < sortedColors.count {
             for i in 1..<sortedColors.count {
-                let nextProposedEdgeColor = sortedColors.objectAtIndex(i) as! PCCountedColor
+                let nextProposedEdgeColor = sortedColors.object(at: i) as! PCCountedColor
                 if (CGFloat(nextProposedEdgeColor.count)/CGFloat(proposedEdgeColor.count)) > 0.3 {
                     if !nextProposedEdgeColor.color.isBlackOrWhite {
                         proposedEdgeColor = nextProposedEdgeColor
@@ -118,11 +119,11 @@ public extension UIImage {
         while var kolor = enumerator.nextObject() as? UIColor {
             kolor = kolor.colorWithMinimumSaturation(0.15)
             if kolor.isDarkColor == findDarkTextColor {
-                let colorCount = imageColors.countForObject(kolor)
-                sortedColors.addObject(PCCountedColor(color: kolor, count: colorCount))
+                let colorCount = imageColors.count(for: kolor)
+                sortedColors.add(PCCountedColor(color: kolor, count: colorCount))
             }
         }
-        sortedColors.sortUsingComparator(sortedColorComparator)
+        sortedColors.sort(comparator: sortedColorComparator)
         
         for curContainer in sortedColors {
             let kolor = (curContainer as! PCCountedColor).color
